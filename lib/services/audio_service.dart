@@ -255,6 +255,9 @@ class AudioService {
   final Map<String, List<AudioPlayer>> _chordPools = {};
   final Map<String, int> _chordPoolIdx = {};
 
+  // Cache of audio source URIs/paths (avoid regenerating WAVs).
+  final Map<String, String> _sourceCache = {};
+
   /// Pre-generate and pre-load player pools for every unique chord.
   Future<void> prepareChords(List<String> chordNames) async {
     final unique = chordNames.toSet();
