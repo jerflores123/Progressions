@@ -1,11 +1,11 @@
 {
-    "name": "progression_session",
-    "short_name": "progression_session",
+    "name": "Progression Session",
+    "short_name": "PS",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#1C1B1F",
+    "theme_color": "#7C4DFF",
+    "description": "A songwriting tool that generates and plays chord progressions.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
