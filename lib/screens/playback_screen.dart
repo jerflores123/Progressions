@@ -30,13 +30,14 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   bool _isPlaying = false;
   int _activeChordIndex = -1;
   bool _preparing = false;
-  bool _metronomeOn = true;
+  bool _metronomeOn = false;
   int _currentBeat = -1;
 
   @override
   void initState() {
     super.initState();
     _progression = List.of(widget.progression);
+    _audio.metronomeEnabled = false;
   }
 
   @override

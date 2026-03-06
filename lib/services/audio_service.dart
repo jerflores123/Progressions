@@ -31,11 +31,14 @@ class AudioService {
   bool get isPlaying => _playing;
 
   // Metronome click
-  bool _metronomeEnabled = true;
+  bool _metronomeEnabled = false;
   bool get metronomeEnabled => _metronomeEnabled;
   set metronomeEnabled(bool v) => _metronomeEnabled = v;
 
-  AudioPlayer? _clickPlayer;
+  // Pool of click players to avoid re-loading on web.
+  static const int _clickPoolSize = 4;
+  final List<AudioPlayer> _clickPool = [];
+  int _clickPoolIdx = 0;
   String? _clickSource;
 
   // Callback invoked when the currently-sounding chord changes (index into
@@ -114,7 +117,7 @@ class AudioService {
     return _encodePcmToWav(pcm);
   }
 
-  /// Prepare the click audio player.
+  /// Prepare the click audio player pool.
   Future<void> _prepareClick() async {
     final wavBytes = _generateClickWav();
     if (kIsWeb) {
@@ -124,26 +127,25 @@ class AudioService {
       await platform_io.writeFileIfMissing(path, () => wavBytes);
       _clickSource = path;
     }
-    _clickPlayer = AudioPlayer();
-    if (kIsWeb) {
-      await _clickPlayer!.setUrl(_clickSource!);
-    } else {
-      await _clickPlayer!.setFilePath(_clickSource!);
+    // Create a pool of pre-loaded click players so we never re-load on web.
+    for (int i = 0; i < _clickPoolSize; i++) {
+      final p = AudioPlayer();
+      if (kIsWeb) {
+        await p.setUrl(_clickSource!);
+      } else {
+        await p.setFilePath(_clickSource!);
+      }
+      await p.setVolume(0.7);
+      _clickPool.add(p);
     }
-    await _clickPlayer!.setVolume(0.7);
   }
 
-  /// Fire the click sound.
-  Future<void> _playClick() async {
-    if (!_metronomeEnabled || _clickPlayer == null) return;
-    // Re-set source for reliable web replay
-    if (kIsWeb) {
-      await _clickPlayer!.setUrl(_clickSource!);
-    } else {
-      await _clickPlayer!.setFilePath(_clickSource!);
-    }
-    await _clickPlayer!.seek(Duration.zero);
-    _clickPlayer!.play();
+  /// Fire the click sound using a round-robin player pool.
+  void _playClick() {
+    if (!_metronomeEnabled || _clickPool.isEmpty) return;
+    final player = _clickPool[_clickPoolIdx % _clickPoolSize];
+    _clickPoolIdx++;
+    player.seek(Duration.zero).then((_) => player.play());
   }
 
   /// Synthesise a guitar-strum–like WAV for [chordName].
@@ -248,27 +250,43 @@ class AudioService {
     }
   }
 
-  // Cache of audio source URIs/paths (avoid regenerating WAVs).
-  final Map<String, String> _sourceCache = {};
+  // Pool of chord players per chord name — avoids re-loading source on web.
+  static const int _chordPoolSize = 2;
+  final Map<String, List<AudioPlayer>> _chordPools = {};
+  final Map<String, int> _chordPoolIdx = {};
 
-  /// Pre-generate and pre-load players for every unique chord in the list.
+  /// Pre-generate and pre-load player pools for every unique chord.
   Future<void> prepareChords(List<String> chordNames) async {
     final unique = chordNames.toSet();
     for (final name in unique) {
       if (!_sourceCache.containsKey(name)) {
         _sourceCache[name] = await _ensureChordSource(name);
       }
-      if (!_players.containsKey(name)) {
-        final player = AudioPlayer();
-        if (kIsWeb) {
-          await player.setUrl(_sourceCache[name]!);
-        } else {
-          await player.setFilePath(_sourceCache[name]!);
+      if (!_chordPools.containsKey(name)) {
+        final pool = <AudioPlayer>[];
+        for (int i = 0; i < _chordPoolSize; i++) {
+          final player = AudioPlayer();
+          if (kIsWeb) {
+            await player.setUrl(_sourceCache[name]!);
+          } else {
+            await player.setFilePath(_sourceCache[name]!);
+          }
+          await player.setVolume(1.0);
+          pool.add(player);
         }
-        await player.setVolume(1.0);
-        _players[name] = player;
+        _chordPools[name] = pool;
+        _chordPoolIdx[name] = 0;
       }
     }
+  }
+
+  /// Get the next player from the chord's round-robin pool.
+  AudioPlayer? _nextChordPlayer(String chordName) {
+    final pool = _chordPools[chordName];
+    if (pool == null || pool.isEmpty) return null;
+    final idx = (_chordPoolIdx[chordName] ?? 0) % pool.length;
+    _chordPoolIdx[chordName] = idx + 1;
+    return pool[idx];
   }
 
   // ---------------------------------------------------------------
@@ -283,8 +301,11 @@ class AudioService {
     // Pre-load all chords
     await prepareChords(progression.map((e) => e.name).toList());
 
-    // Beat duration in milliseconds (4/4 time → 4 beats per measure)
-    final beatMs = (60000 / bpm).round();
+    // Beat duration in microseconds for precise timing
+    final beatUs = (60000000 / bpm).round();
+
+    final stopwatch = Stopwatch()..start();
+    int nextBeatUs = 0; // when the next beat should fire
 
     while (_playing) {
       for (int ci = 0; ci < progression.length && _playing; ci++) {
@@ -295,44 +316,50 @@ class AudioService {
 
           // 4 beats per measure
           for (int beat = 0; beat < 4 && _playing; beat++) {
+            // Wait until the precise beat time
+            final waitUs = nextBeatUs - stopwatch.elapsedMicroseconds;
+            if (waitUs > 1000) {
+              await Future.delayed(Duration(microseconds: waitUs - 500));
+            }
+            // Spin-wait for the last fraction for precision
+            while (stopwatch.elapsedMicroseconds < nextBeatUs) {}
+
+            if (!_playing) break;
+
             onBeat?.call(beat);
 
             if (beat == 0) {
               // Beat 1: strum the chord + click
-              final player = _players[entry.name];
+              final player = _nextChordPlayer(entry.name);
               if (player != null) {
-                final source = _sourceCache[entry.name];
-                if (source != null) {
-                  if (kIsWeb) {
-                    await player.setUrl(source);
-                  } else {
-                    await player.setFilePath(source);
-                  }
-                }
-                await player.seek(Duration.zero);
-                player.play();
+                player.seek(Duration.zero).then((_) => player.play());
               }
-              await _playClick();
+              _playClick();
             } else {
               // Beats 2-4: click only
-              await _playClick();
+              _playClick();
             }
 
-            // Wait one beat
-            await Future.delayed(Duration(milliseconds: beatMs));
+            nextBeatUs += beatUs;
           }
         }
       }
     }
+
+    stopwatch.stop();
   }
 
   /// Stop playback.
   void stop() {
     _playing = false;
-    for (final p in _players.values) {
-      p.stop();
+    for (final pool in _chordPools.values) {
+      for (final p in pool) {
+        p.pause();
+      }
     }
-    _clickPlayer?.stop();
+    for (final p in _clickPool) {
+      p.pause();
+    }
     onMeasureChange = null;
     onBeat = null;
   }
@@ -340,11 +367,17 @@ class AudioService {
   /// Release all players (call on dispose).
   Future<void> dispose() async {
     stop();
-    for (final p in _players.values) {
+    for (final pool in _chordPools.values) {
+      for (final p in pool) {
+        await p.dispose();
+      }
+    }
+    _chordPools.clear();
+    _chordPoolIdx.clear();
+    _players.clear();
+    for (final p in _clickPool) {
       await p.dispose();
     }
-    _players.clear();
-    await _clickPlayer?.dispose();
-    _clickPlayer = null;
+    _clickPool.clear();
   }
 }
