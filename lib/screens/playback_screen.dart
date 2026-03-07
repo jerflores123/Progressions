@@ -284,45 +284,46 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                   ),
                   const Spacer(),
                   // Beat indicator dots  1  2  3  4
-                  ...List.generate(4, (i) {
-                    final isActive = _isPlaying && _currentBeat == i;
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 80),
-                        width: isActive ? 20 : 14,
-                        height: isActive ? 20 : 14,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: isActive
-                              ? (i == 0
-                                  ? colorScheme.primary
-                                  : colorScheme.tertiary)
-                              : colorScheme.surfaceContainerHighest,
-                          border: Border.all(
-                            color: i == 0
-                                ? colorScheme.primary
-                                : colorScheme.tertiary,
-                            width: 1.5,
-                          ),
-                        ),
-                        child: Center(
-                          child: Text(
-                            '${i + 1}',
-                            style: TextStyle(
-                              fontSize: isActive ? 11 : 9,
-                              fontWeight: FontWeight.bold,
-                              color: isActive
-                                  ? (i == 0
-                                      ? colorScheme.onPrimary
-                                      : colorScheme.onTertiary)
-                                  : colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
+                  // TODO: Uncomment later to show beat indicator
+                  // ...List.generate(4, (i) {
+                  //   final isActive = _isPlaying && _currentBeat == i;
+                  //   return Padding(
+                  //     padding: const EdgeInsets.symmetric(horizontal: 4),
+                  //     child: AnimatedContainer(
+                  //       duration: const Duration(milliseconds: 80),
+                  //       width: isActive ? 20 : 14,
+                  //       height: isActive ? 20 : 14,
+                  //       decoration: BoxDecoration(
+                  //         shape: BoxShape.circle,
+                  //         color: isActive
+                  //             ? (i == 0
+                  //                 ? colorScheme.primary
+                  //                 : colorScheme.tertiary)
+                  //             : colorScheme.surfaceContainerHighest,
+                  //         border: Border.all(
+                  //           color: i == 0
+                  //               ? colorScheme.primary
+                  //               : colorScheme.tertiary,
+                  //           width: 1.5,
+                  //         ),
+                  //       ),
+                  //       child: Center(
+                  //         child: Text(
+                  //           '${i + 1}',
+                  //           style: TextStyle(
+                  //             fontSize: isActive ? 11 : 9,
+                  //             fontWeight: FontWeight.bold,
+                  //             color: isActive
+                  //                 ? (i == 0
+                  //                     ? colorScheme.onPrimary
+                  //                     : colorScheme.onTertiary)
+                  //                 : colorScheme.onSurfaceVariant,
+                  //           ),
+                  //         ),
+                  //       ),
+                  //     ),
+                  //   );
+                  // }),
                 ],
               ),
             ),
